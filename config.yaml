@@ -1,0 +1,25 @@
+# OPC UA Server Configuration
+server:
+  endpoint: "opc.tcp://0.0.0.0:4840/nuchas/server"
+  name: "Nuchas OPC UA SPC Server"
+  uri: "http://nuchas.opcua.spc.server"
+
+# JSON API source configuration
+api:
+  url: "http://localhost:8080/api/data"
+  poll_interval_seconds: 5
+  timeout_seconds: 10
+  # HTTP headers to include in API requests (e.g. for authentication)
+  headers: {}
+
+# SPC configuration
+spc:
+  # Number of samples per subgroup
+  subgroup_size: 5
+  # Number of subgroups to retain for calculations
+  max_subgroups: 25
+  # Number of standard deviations for control limits (typically 3)
+  sigma_multiplier: 3.0
+  # Specification limits (set null to disable capability calculations)
+  upper_spec_limit: null
+  lower_spec_limit: null
