@@ -48,6 +48,8 @@ Objects/
 ### Install
 
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -81,6 +83,7 @@ export NUCHAS_POLL_INTERVAL=10
 ### Run
 
 ```bash
+source .venv/bin/activate            # if not already activated
 python -m src.server                 # uses config.yaml
 python -m src.server /path/to/config.yaml  # custom config path
 ```
@@ -109,6 +112,7 @@ The API client accepts several common JSON response shapes:
 ## Running Tests
 
 ```bash
+source .venv/bin/activate
 python -m pytest tests/ -v
 ```
 
