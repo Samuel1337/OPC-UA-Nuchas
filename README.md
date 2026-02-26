@@ -11,6 +11,7 @@ An OPC UA server that ingests JSON data from an HTTP API, computes Statistical P
 - [API Endpoints](#api-endpoints)
 - [OPC UA Server](#opc-ua-server)
 - [Data Flow: End-to-End](#data-flow-end-to-end)
+- [Connecting an OPC UA Client](#connecting-an-opc-ua-client)
 - [Configuration Reference](#configuration-reference)
 - [Supported JSON Formats](#supported-json-formats)
 - [Running Tests](#running-tests)
@@ -618,6 +619,173 @@ The browser JavaScript polls `GET /api/status` every 2 seconds. When the respons
     │  Shows "Received by OPC"  │                                │                        │
     │  badge (green)            │                                │                        │
 ```
+
+## Connecting an OPC UA Client
+
+Any OPC UA client can connect to the server over the binary TCP protocol to browse, read, or subscribe to nodes. No authentication is required — the server accepts anonymous connections.
+
+### Connection Details
+
+| Parameter | Value |
+|-----------|-------|
+| Endpoint URL | `opc.tcp://localhost:4840/nuchas/server` |
+| Security | None (anonymous) |
+| Namespace URI | `http://nuchas.opcua.spc.server` |
+
+Replace `localhost` with the machine's IP or hostname when connecting remotely (e.g. from an EC2 public IP).
+
+### GUI Clients (No Code Required)
+
+Tools like **UaExpert** (free, Windows/Linux) or **Prosys OPC UA Browser** (free, cross-platform) let you connect, browse the address space tree, and read/watch node values interactively.
+
+1. Open the client and add a new connection with the endpoint URL above.
+2. Browse to `Objects > QualityForms > CCP1` or `Objects > SPC > XBarChart`.
+3. Click any variable node to read its current value.
+4. Drag nodes into a watch list for live monitoring.
+
+### Python Client (asyncua)
+
+Since the server uses the `asyncua` library, the same package works as a client. It is already installed via `requirements.txt`.
+
+#### Read a Single Node
+
+```python
+import asyncio
+from asyncua import Client
+
+async def main():
+    async with Client("opc.tcp://localhost:4840/nuchas/server") as client:
+        # Look up our server's namespace index
+        idx = await client.get_namespace_index("http://nuchas.opcua.spc.server")
+        objects = client.nodes.objects
+
+        # Read CCP1 start chilling temperature
+        path = [f"{idx}:QualityForms", f"{idx}:CCP1", f"{idx}:StartChilling", f"{idx}:Temperature"]
+        node = await objects.get_child(path)
+        value = await node.read_value()
+        print(f"Temperature: {value}")   # e.g. 162.5
+
+asyncio.run(main())
+```
+
+#### Read Multiple Nodes
+
+```python
+import asyncio
+from asyncua import Client
+
+async def main():
+    async with Client("opc.tcp://localhost:4840/nuchas/server") as client:
+        idx = await client.get_namespace_index("http://nuchas.opcua.spc.server")
+        objects = client.nodes.objects
+
+        nodes_to_read = {
+            "X-bar":       [f"{idx}:SPC", f"{idx}:XBarChart", f"{idx}:GrandMean"],
+            "UCL":         [f"{idx}:SPC", f"{idx}:XBarChart", f"{idx}:UCL"],
+            "LCL":         [f"{idx}:SPC", f"{idx}:XBarChart", f"{idx}:LCL"],
+            "CCP1 Temp":   [f"{idx}:QualityForms", f"{idx}:CCP1", f"{idx}:StartChilling", f"{idx}:Temperature"],
+            "CCP1 Passed": [f"{idx}:QualityForms", f"{idx}:CCP1", f"{idx}:StartChilling", f"{idx}:Pass"],
+        }
+
+        for label, path in nodes_to_read.items():
+            node = await objects.get_child(path)
+            value = await node.read_value()
+            print(f"{label}: {value}")
+
+asyncio.run(main())
+```
+
+#### Browse a Folder
+
+Navigating to a folder (e.g. `Objects > QualityForms > CCP1`) returns the folder node itself, not a value. Use `get_children()` to list its contents:
+
+```python
+import asyncio
+from asyncua import Client, ua
+
+async def main():
+    async with Client("opc.tcp://localhost:4840/nuchas/server") as client:
+        idx = await client.get_namespace_index("http://nuchas.opcua.spc.server")
+        objects = client.nodes.objects
+
+        # Navigate to the CCP1 folder
+        ccp1 = await objects.get_child([f"{idx}:QualityForms", f"{idx}:CCP1"])
+
+        # List everything inside it
+        for child in await ccp1.get_children():
+            name = await child.read_browse_name()
+            node_class = await child.read_node_class()
+
+            if node_class == ua.NodeClass.Variable:
+                value = await child.read_value()
+                print(f"  {name.Name} = {value}")
+            else:
+                print(f"  {name.Name}/  (folder — browse deeper to read values)")
+
+asyncio.run(main())
+```
+
+Output:
+
+```
+  Header/  (folder — browse deeper to read values)
+  CriticalLimitsText = All meat or poultry fillings must be chilled ...
+  StartChilling/  (folder — browse deeper to read values)
+  ChillingProcess1/  (folder — browse deeper to read values)
+  ChillingProcess2/  (folder — browse deeper to read values)
+  DirectObservation/  (folder — browse deeper to read values)
+```
+
+#### Subscribe to Live Changes
+
+Instead of polling, OPC UA clients can subscribe to nodes and receive callbacks the instant the server writes a new value (every 5-second poll cycle):
+
+```python
+import asyncio
+from asyncua import Client
+from asyncua.common.subscription import DataChangeNotif
+
+class Handler:
+    def datachange_notification(self, node, val, data: DataChangeNotif):
+        print(f"Value changed: {node} -> {val}")
+
+async def main():
+    async with Client("opc.tcp://localhost:4840/nuchas/server") as client:
+        idx = await client.get_namespace_index("http://nuchas.opcua.spc.server")
+        objects = client.nodes.objects
+
+        # Subscribe to CCP1 temperature changes
+        temp_node = await objects.get_child(
+            [f"{idx}:QualityForms", f"{idx}:CCP1", f"{idx}:StartChilling", f"{idx}:Temperature"]
+        )
+
+        handler = Handler()
+        subscription = await client.create_subscription(500, handler)  # check every 500ms
+        await subscription.subscribe_data_change(temp_node)
+
+        print("Subscribed. Waiting for changes... (Ctrl+C to stop)")
+        await asyncio.sleep(3600)  # stay connected
+
+asyncio.run(main())
+```
+
+Every time the OPC UA server updates the temperature node (after polling the API), the `Handler.datachange_notification` callback fires automatically.
+
+### Node Path Quick Reference
+
+Common paths for reading data (replace `{idx}` with the namespace index):
+
+| Data | Path |
+|------|------|
+| CCP1 start temp | `{idx}:QualityForms` / `{idx}:CCP1` / `{idx}:StartChilling` / `{idx}:Temperature` |
+| CCP1 chilling 1 passed | `{idx}:QualityForms` / `{idx}:CCP1` / `{idx}:ChillingProcess1` / `{idx}:Pass` |
+| CCP3 baking temp | `{idx}:QualityForms` / `{idx}:CCP3` / `{idx}:BakingStartChilling` / `{idx}:Temperature` |
+| CCP3 linked items | `{idx}:QualityForms` / `{idx}:CCP3` / `{idx}:LinkedItems` |
+| X-bar grand mean | `{idx}:SPC` / `{idx}:XBarChart` / `{idx}:GrandMean` |
+| X-bar UCL | `{idx}:SPC` / `{idx}:XBarChart` / `{idx}:UCL` |
+| R-bar average range | `{idx}:SPC` / `{idx}:RChart` / `{idx}:AverageRange` |
+| Process Cp | `{idx}:SPC` / `{idx}:Capability` / `{idx}:Cp` |
+| Sample count | `{idx}:SPC` / `{idx}:ProcessStats` / `{idx}:SampleCount` |
 
 ## Configuration Reference
 
