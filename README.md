@@ -82,8 +82,17 @@ export NUCHAS_POLL_INTERVAL=10
 
 ### Run
 
+In one terminal, start the mock API (or point `config.yaml` at your real API):
+
 ```bash
-source .venv/bin/activate            # if not already activated
+source .venv/bin/activate
+python -m src.mock_api               # serves test data on :8080
+```
+
+In a second terminal, start the OPC UA server:
+
+```bash
+source .venv/bin/activate
 python -m src.server                 # uses config.yaml
 python -m src.server /path/to/config.yaml  # custom config path
 ```
@@ -125,7 +134,8 @@ python -m pytest tests/ -v
 │   ├── server.py         # OPC UA server + main entry point
 │   ├── spc.py            # SPC statistical calculations
 │   ├── api_client.py     # HTTP JSON API client
-│   └── config.py         # Configuration loader
+│   ├── config.py         # Configuration loader
+│   └── mock_api.py       # Mock data API for testing
 └── tests/
     ├── test_spc.py       # SPC calculation tests
     ├── test_api_client.py # JSON extraction tests
