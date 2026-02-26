@@ -4,22 +4,30 @@ Mock JSON API server for testing the OPC UA server.
 Generates realistic HACCP quality check form data (CCP1/CCP3) over HTTP
 so you can run the full pipeline without an external data source.
 
+Includes a web frontend for submitting custom form data and monitoring
+whether the OPC UA server has picked it up.
+
 Usage:
     source .venv/bin/activate
     python -m src.mock_api              # defaults: port 8080
     python -m src.mock_api --port 9090  # custom port
 
 Endpoints:
-    GET /api/forms  - CCP1 and CCP3 quality check form data
-    GET /health     - Health check
+    GET  /            - Web frontend for form entry and monitoring
+    GET  /api/forms   - CCP1 and CCP3 quality check form data
+    POST /api/forms   - Submit custom form data (replaces auto-generated)
+    GET  /api/status  - Submission log with OPC poll status
+    GET  /health      - Health check
 """
 
 import argparse
 import json
 import random
 import time
+import threading
 from datetime import datetime, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from pathlib import Path
 
 # ── Simulated chilling process state ──────────────────────────────
 # Temperatures cool down over time to simulate a real chilling cycle.
@@ -38,21 +46,134 @@ def _fmt_time(offset_minutes: float = 0) -> str:
     return dt.strftime("%b-%d-%Y %I:%M %p")
 
 
+def _fmt_now() -> str:
+    return datetime.now().strftime("%b-%d-%Y %I:%M:%S %p")
+
+
+# ── Shared submission state (thread-safe) ─────────────────────────
+_lock = threading.Lock()
+_custom_forms: dict[str, dict] = {}          # form_type -> latest submitted data
+_submission_log: list[dict] = []             # ordered list of submissions
+_submission_counter = 0
+_last_opc_poll_at: str | None = None         # timestamp of last GET /api/forms
+
+
 class MockAPIHandler(BaseHTTPRequestHandler):
-    """Serves synthetic HACCP quality form data."""
+    """Serves synthetic HACCP quality form data and the web frontend."""
 
     def do_GET(self):
-        if self.path == "/api/forms":
+        if self.path == "/":
+            self._serve_frontend()
+        elif self.path == "/api/forms":
             self._serve_forms()
+        elif self.path == "/api/status":
+            self._serve_status()
         elif self.path == "/health":
-            self._respond(200, {"status": "ok"})
+            self._respond_json(200, {"status": "ok"})
         else:
-            self._respond(404, {"error": "not found"})
+            self._respond_json(404, {"error": "not found"})
+
+    def do_POST(self):
+        if self.path == "/api/forms":
+            self._handle_form_submission()
+        else:
+            self._respond_json(404, {"error": "not found"})
+
+    # ── Frontend ──────────────────────────────────────────────────
+
+    def _serve_frontend(self):
+        html_path = Path(__file__).parent / "static" / "index.html"
+        try:
+            content = html_path.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(content)))
+            self.end_headers()
+            self.wfile.write(content)
+        except FileNotFoundError:
+            self._respond_json(500, {"error": "index.html not found"})
+
+    # ── GET /api/forms ────────────────────────────────────────────
 
     def _serve_forms(self):
+        global _last_opc_poll_at
+
+        with _lock:
+            # Record poll timestamp and mark pending submissions as received
+            now = _fmt_now()
+            _last_opc_poll_at = now
+            for entry in _submission_log:
+                if not entry["received"]:
+                    entry["received"] = True
+                    entry["received_at"] = now
+
+        # Build response: use custom data when available, auto-generated otherwise
+        forms = self._generate_forms()
+        with _lock:
+            for form_type, form_data in _custom_forms.items():
+                forms[form_type] = form_data
+
+        self._respond_json(200, forms)
+
+    # ── POST /api/forms ───────────────────────────────────────────
+
+    def _handle_form_submission(self):
+        global _submission_counter
+
+        content_length = int(self.headers.get("Content-Length", 0))
+        if content_length == 0:
+            self._respond_json(400, {"error": "empty body"})
+            return
+
+        try:
+            body = self.rfile.read(content_length)
+            data = json.loads(body)
+        except (json.JSONDecodeError, ValueError) as e:
+            self._respond_json(400, {"error": f"invalid JSON: {e}"})
+            return
+
+        if not isinstance(data, dict) or not data:
+            self._respond_json(400, {"error": "expected a JSON object with form type keys"})
+            return
+
+        with _lock:
+            for form_type, form_data in data.items():
+                if not isinstance(form_data, dict):
+                    continue
+                _custom_forms[form_type] = form_data
+                _submission_counter += 1
+                _submission_log.append({
+                    "id": _submission_counter,
+                    "form_type": form_type,
+                    "submitted_at": _fmt_now(),
+                    "data": {form_type: form_data},
+                    "received": False,
+                    "received_at": None,
+                })
+
+        self._respond_json(200, {
+            "status": "accepted",
+            "message": f"Form data stored for: {', '.join(data.keys())}. "
+                       f"OPC server will pick it up on next poll.",
+        })
+
+    # ── GET /api/status ───────────────────────────────────────────
+
+    def _serve_status(self):
+        with _lock:
+            response = {
+                "last_opc_poll_at": _last_opc_poll_at,
+                "total_submissions": len(_submission_log),
+                "submissions": list(_submission_log),
+            }
+        self._respond_json(200, response)
+
+    # ── Auto-generated form data ──────────────────────────────────
+
+    def _generate_forms(self):
         elapsed = _minutes_elapsed()
 
-        # Simulate cooling: start at 158°F, drop toward 38°F over ~120 min
+        # Simulate cooling: start at 158 F, drop toward 38 F over ~120 min
         start_temp = 158.0
         chill1_temp = max(38.0, start_temp - elapsed * 1.2 + random.gauss(0, 0.5))
         chill2_temp = max(35.0, chill1_temp - 15 - elapsed * 0.3 + random.gauss(0, 0.3))
@@ -60,7 +181,7 @@ class MockAPIHandler(BaseHTTPRequestHandler):
         baking_start_temp = 138.0
         baking_c1_temp = max(26.0, baking_start_temp - elapsed * 1.5 + random.gauss(0, 0.5))
 
-        forms = {
+        return {
             "ccp1": {
                 "header": {
                     "quality_check_id": "QC-213091",
@@ -169,9 +290,10 @@ class MockAPIHandler(BaseHTTPRequestHandler):
                 ],
             },
         }
-        self._respond(200, forms)
 
-    def _respond(self, status: int, body: dict):
+    # ── Helpers ───────────────────────────────────────────────────
+
+    def _respond_json(self, status: int, body: dict):
         payload = json.dumps(body).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -190,7 +312,11 @@ def main():
 
     server = HTTPServer(("0.0.0.0", args.port), MockAPIHandler)
     print(f"Mock API serving at http://0.0.0.0:{args.port}")
-    print(f"  GET /api/forms  - CCP1 & CCP3 quality check forms")
+    print(f"  GET  /            - Web frontend")
+    print(f"  GET  /api/forms   - CCP1 & CCP3 quality check forms")
+    print(f"  POST /api/forms   - Submit custom form data")
+    print(f"  GET  /api/status  - Submission log + OPC poll status")
+    print(f"  GET  /health      - Health check")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

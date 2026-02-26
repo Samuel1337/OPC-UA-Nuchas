@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nuchas HACCP Form Submission</title>
+<style>
+  :root {
+    --bg: #f5f6fa;
+    --card: #ffffff;
+    --border: #dfe3e8;
+    --primary: #2c5282;
+    --primary-hover: #2b6cb0;
+    --success: #276749;
+    --success-bg: #c6f6d5;
+    --warning: #975a16;
+    --warning-bg: #fefcbf;
+    --error: #c53030;
+    --error-bg: #fed7d7;
+    --text: #2d3748;
+    --text-light: #718096;
+    --section-bg: #edf2f7;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+  .container { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+
+  /* Header */
+  header {
+    background: var(--primary);
+    color: white;
+    padding: 20px 0;
+    margin-bottom: 24px;
+  }
+  header h1 { font-size: 1.5rem; font-weight: 600; }
+  header p { font-size: 0.875rem; opacity: 0.85; margin-top: 4px; }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 20px;
+    border-bottom: 2px solid var(--border);
+  }
+  .tab {
+    padding: 10px 24px;
+    cursor: pointer;
+    background: none;
+    border: none;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: var(--text-light);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.15s;
+  }
+  .tab:hover { color: var(--primary); }
+  .tab.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+    font-weight: 600;
+  }
+
+  /* Form panels */
+  .form-panel { display: none; }
+  .form-panel.active { display: block; }
+
+  /* Sections */
+  .section {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+  .section-header {
+    background: var(--section-bg);
+    padding: 12px 16px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .section-header:hover { background: #e2e8f0; }
+  .section-header .chevron {
+    font-size: 0.75rem;
+    transition: transform 0.2s;
+    color: var(--text-light);
+  }
+  .section-header.collapsed .chevron { transform: rotate(-90deg); }
+  .section-body { padding: 16px; }
+  .section-header.collapsed + .section-body { display: none; }
+
+  /* Form grid */
+  .form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
+  }
+  .form-group { display: flex; flex-direction: column; }
+  .form-group label {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--text-light);
+    margin-bottom: 4px;
+  }
+  .form-group input, .form-group select, .form-group textarea {
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 0.9rem;
+    font-family: inherit;
+    color: var(--text);
+    transition: border-color 0.15s;
+  }
+  .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(44, 82, 130, 0.15);
+  }
+  .form-group textarea { resize: vertical; min-height: 60px; }
+  .form-group.full-width { grid-column: 1 / -1; }
+
+  /* Checkbox */
+  .checkbox-group {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+  }
+  .checkbox-group input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--primary);
+  }
+  .checkbox-group label {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--text);
+  }
+
+  /* Submit */
+  .submit-bar {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 32px;
+  }
+  .btn {
+    padding: 10px 28px;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-primary {
+    background: var(--primary);
+    color: white;
+  }
+  .btn-primary:hover { background: var(--primary-hover); }
+  .btn-primary:disabled {
+    background: #a0aec0;
+    cursor: not-allowed;
+  }
+  .btn-secondary {
+    background: var(--section-bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover { background: #e2e8f0; }
+
+  /* Monitor panel */
+  .monitor {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .monitor-header {
+    background: var(--section-bg);
+    padding: 14px 16px;
+    font-weight: 600;
+    font-size: 0.95rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+  }
+  .monitor-header .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 6px;
+    animation: pulse 2s infinite;
+  }
+  .dot.green { background: #48bb78; }
+  .dot.gray { background: #a0aec0; animation: none; }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .monitor-body { max-height: 420px; overflow-y: auto; }
+  .monitor-empty {
+    padding: 40px 16px;
+    text-align: center;
+    color: var(--text-light);
+    font-size: 0.9rem;
+  }
+
+  /* Log entry */
+  .log-entry {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+  }
+  .log-entry:last-child { border-bottom: none; }
+  .log-badge {
+    flex-shrink: 0;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .badge-pending { background: var(--warning-bg); color: var(--warning); }
+  .badge-received { background: var(--success-bg); color: var(--success); }
+  .badge-error { background: var(--error-bg); color: var(--error); }
+  .log-details { flex: 1; min-width: 0; }
+  .log-meta {
+    font-size: 0.8rem;
+    color: var(--text-light);
+    margin-bottom: 4px;
+  }
+  .log-summary { font-size: 0.875rem; }
+  .log-json-toggle {
+    font-size: 0.75rem;
+    color: var(--primary);
+    cursor: pointer;
+    margin-top: 6px;
+    display: inline-block;
+  }
+  .log-json-toggle:hover { text-decoration: underline; }
+  .log-json {
+    display: none;
+    background: #f7fafc;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px;
+    margin-top: 6px;
+    font-size: 0.78rem;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  .log-json.open { display: block; }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: white;
+    z-index: 1000;
+    transform: translateY(100px);
+    opacity: 0;
+    transition: all 0.3s;
+  }
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.success { background: var(--success); }
+  .toast.error { background: var(--error); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="container">
+    <h1>Nuchas HACCP Form Submission</h1>
+    <p>Submit quality check data to the OPC UA server and monitor delivery status</p>
+  </div>
+</header>
+
+<div class="container">
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" data-form="ccp1">CCP1 &mdash; Kettle Chilling</button>
+    <button class="tab" data-form="ccp3">CCP3 &mdash; Baking Line Chilling</button>
+  </div>
+
+  <!-- ======================== CCP1 FORM ======================== -->
+  <div class="form-panel active" id="panel-ccp1">
+    <!-- Header -->
+    <div class="section">
+      <div class="section-header collapsed" onclick="toggleSection(this)">
+        <span>Header</span>
+        <span class="chevron">&#9660;</span>
+      </div>
+      <div class="section-body">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Quality Check ID</label>
+            <input type="text" id="ccp1-quality_check_id" value="QC-213091">
+          </div>
+          <div class="form-group full-width">
+            <label>Form Name</label>
+            <input type="text" id="ccp1-form_name" value="Empanada (USDA/FDA) HACCP Record (CCP 2B) FSQ-2.4.3.12-CCP-2B">
+          </div>
+          <div class="form-group">
+            <label>Authenticated By</label>
+            <input type="text" id="ccp1-authenticated_by" value="Alejandro Anzoategui (aanzo)">
+          </div>
+          <div class="form-group">
+            <label>Auth Time</label>
+            <input type="text" id="ccp1-auth_time" value="">
+          </div>
+          <div class="form-group">
+            <label>Triggered By</label>
+            <input type="text" id="ccp1-triggered_by" value="CCP1B Pass = CCP2B">
+          </div>
+          <div class="form-group">
+            <label>Trigger Time</label>
+            <input type="text" id="ccp1-trigger_time" value="">
+          </div>
+          <div class="form-group full-width">
+            <label>Assigned To</label>
+            <input type="text" id="ccp1-assigned_to" value="Chilling CCP1&amp;2 Cooking, Alejandro Anzoategui">
+          </div>
+          <div class="form-group">
+            <label>Signed Off By</label>
+            <input type="text" id="ccp1-signed_off_by" value="Sandra Echeverry (secheverry)">
+          </div>
+          <div class="form-group">
+            <label>Sign Off Time</label>
+            <input type="text" id="ccp1-sign_off_time" value="">
+          </div>
+          <div class="form-group">
+            <label>Location</label>
+            <input type="text" id="ccp1-location" value="Kettle 1">
+          </div>
+          <div class="form-group">
+            <label>Product</label>
+            <input type="text" id="ccp1-product" value="Ground Beef Empanadas RTE 24/3oz">
+          </div>
+          <div class="form-group">
+            <label>SKU</label>
+            <input type="text" id="ccp1-sku" value="120001-C">
+          </div>
+          <div class="form-group">
+            <label>Run ID</label>
+            <input type="text" id="ccp1-run_id" value="25174-001 USDA">
+          </div>
+          <div class="form-group">
+            <label>Custom Reference</label>
+            <input type="text" id="ccp1-custom_reference" value="1">
+          </div>
+          <div class="form-group">
+            <label>Run Start Date</label>
+            <input type="text" id="ccp1-run_start_date" value="">
+          </div>
+          <div class="form-group">
+            <label>Run End Date</label>
+            <input type="text" id="ccp1-run_end_date" value="">
+          </div>
+          <div class="form-group">
+            <label>Run Sign Off Time</label>
+            <input type="text" id="ccp1-run_sign_off_time" value="">
+          </div>
+          <div class="form-group">
+            <label>Run Sign Off By</label>
+            <input type="text" id="ccp1-run_sign_off_by" value="Sandra Echeverry (secheverry)">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Critical Limits -->
+    <div class="section">
+      <div class="section-header collapsed" onclick="toggleSection(this)">
+        <span>Critical Limits</span>
+        <span class="chevron">&#9660;</span>
+      </div>
+      <div class="section-body">
+        <div class="form-grid">
+          <div class="form-group full-width">
+            <label>Critical Limits Text</label>
+            <textarea id="ccp1-critical_limits_text">All meat or poultry fillings must be chilled to reduce internal temperature from 130 to <= 80 F in <= 1.5 hours (CHILLING 1) and from 80 to <= 40 F in <= 5 hours (CHILLING 2).</textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Start Chilling -->
+    <div class="section">
+      <div class="section-header" onclick="toggleSection(this)">
+        <span>Start Chilling</span>
+        <span class="chevron">&#9660;</span>
+      </div>
+      <div class="section-body">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Batch Number</label>
+            <input type="number" id="ccp1-start_chilling-batch_number" value="1">
+          </div>
+          <div class="form-group">
+            <label>Temperature (&deg;F)</label>
+            <input type="number" step="0.1" id="ccp1-start_chilling-temperature" value="158.0">
+          </div>
+          <div class="form-group">
+            <label>Time</label>
+            <input type="text" id="ccp1-start_chilling-time" value="">
+          </div>
+          <div class="form-group checkbox-group">
+            <input type="checkbox" id="ccp1-start_chilling-passed" checked>
+            <label for="ccp1-start_chilling-passed">Passed</label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chilling Process 1 -->
+    <div class="section">
+      <div class="section-header" onclick="toggleSection(this)">
+        <span>Chilling Process 1</span>
+        <span class="chevron">&#9660;</span>
+      </div>
+      <div class="section-body">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Batch Number</label>
+            <input type="number" id="ccp1-chilling_process_1-batch_number" value="1">
+          </div>
+          <div class="form-group">
+            <label>Temperature (&deg;F)</label>
+            <input type="number" step="0.1" id="ccp1-chilling_process_1-temperature" value="80.0">
+          </div>
+          <div class="form-group">
+            <label>Time</label>
+            <input type="text" id="ccp1-chilling_process_1-time" value="">
+          </div>
+          <div class="form-group checkbox-group">
+            <input type="checkbox" id="ccp1-chilling_process_1-passed" checked>
+            <label for="ccp1-chilling_process_1-passed">Passed</label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chilling Process 2 -->
+    <div class="section">
+      <div class="section-header" onclick="toggleSection(this)">
+        <span>Chilling Process 2</span>
+        <span class="chevron">&#9660;</span>
+      </div>
+      <div class="section-body">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Batch Number</label>
+            <input type="number" id="ccp1-chilling_process_2-batch_number" value="1">
+          </div>
+          <div class="form-group">
+            <label>Temperature (&deg;F)</label>
+            <input type="number" step="0.1" id="ccp1-chilling_process_2-temperature" value="40.0">
+          </div>
+          <div class="form-group">
+            <label>Time</label>
+            <input type="text" id="ccp1-chilling_process_2-time" value="">
+          </div>
+          <div class="form-group checkbox-group">
+            <input type="checkbox" id="ccp1-chilling_process_2-passed" checked>
+            <label for="ccp1-chilling_process_2-passed">Passed</label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Direct Observation -->
+    <div class="section">
+      <div class="section-header" onclick="toggleSection(this)">
+        <span>Direct Observation</span>
+        <span class="chevron">&#9660;</span>
+      </div>
+      <div class="section-body">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Verified By</label>
+            <input type="text" id="ccp1-direct_observation-verified_by" value="Sandra Echeverry">
+          </div>
+          <div class="form-group">
+            <label>Time</label>
+            <input type="text" id="ccp1-direct_observation-time" value="">
+          </div>
+          <div class="form-group full-width">
+            <label>Results</label>
+            <input type="text" id="ccp1-direct_observation-results" value="Acceptable Monitoring Procedures">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="submit-bar">
+      <button class="btn btn-primary" onclick="submitForm('ccp1')">Send CCP1 to OPC Server</button>
+      <button class="btn btn-secondary" onclick="prefillTimestamps('ccp1')">Fill Timestamps with Now</button>
+    </div>
+  </div>
+
+  <!-- ======================== CCP3 FORM ======================== -->
+  <div class="form-panel" id="panel-ccp3">
+    <!-- Header -->
+    <div class="section">
+      <div class="section-header collapsed" onclick="toggleSection(this)">
+        <span>Header</span>
+        <span class="chevron">&#9660;</span>
+      </div>
+      <div class="section-body">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Quality Check ID</label>
+            <input type="text" id="ccp3-quality_check_id" value="QC-213092">
+          </div>
+          <div class="form-group full-width">
+            <label>Form Name</label>
+            <input type="text" id="ccp3-form_name" value="Empanada (USDA/FDA) HACCP Record (CCP 4B) FSQ-2.4.3.12-CCP-4B">
+          </div>
+          <div class="form-group">
+            <label>Authenticated By</label>
+            <input type="text" id="ccp3-authenticated_by" value="Camilo Triana (ctriana)">
+          </div>
+          <div class="form-group">
+            <label>Auth Time</label>
+            <input type="text" id="ccp3-auth_time" value="">
+          </div>
+          <div class="form-group">
+            <label>Triggered By</label>
+            <input type="text" id="ccp3-triggered_by" value="CCP3B Pass = CCP4B">
+          </div>
+          <div class="form-group">
+            <label>Trigger Time</label>
+            <input type="text" id="ccp3-trigger_time" value="">
+          </div>
+          <div class="form-group full-width">
+            <label>Assigned To</label>
+            <input type="text" id="ccp3-assigned_to" value="Chilling CCP3&amp;4 Baking, Camilo Triana">
+          </div>
+          <div class="form-group">
+            <label>Signed Off By</label>
+            <input type="text" id="ccp3-signed_off_by" value="Fernanda Benavides (fbenavides)">
+          </div>
+          <div class="form-group">
+            <label>Sign Off Time</label>
+            <input type="text" id="ccp3-sign_off_time" value="">
+          </div>
+          <div class="form-group">
+            <label>Location</label>
+            <input type="text" id="ccp3-location" value="Baking Line">
+          </div>
+          <div class="form-group">
+            <label>Product</label>
+            <input type="text" id="ccp3-product" value="Italian Sausage Empanadas RTE 24/3oz">
+          </div>
+          <div class="form-group">
+            <label>SKU</label>
+            <input type="text" id="ccp3-sku" value="122003-B">
+          </div>
+          <div class="form-group">
+            <label>Run ID</label>
+            <input type="text" id="ccp3-run_id" value="25167-002 (1-1)">
+          </div>
+          <div class="form-group">
+            <label>Custom Reference</label>
+            <input type="text" id="ccp3-custom_reference" value="1-1">
+          </div>
+          <div class="form-group">
+            <label>Run Start Date</label>
+            <input type="text" id="ccp3-run_start_date" value="">
+          </div>
+          <div class="form-group">
+            <label>Run End Date</label>
+            <input type="text" id="ccp3-run_end_date" value="">
+          </div>
+          <div class="form-group">
+            <label>Run Sign Off Time</label>
+            <input type="text" id="ccp3-run_sign_off_time" value="">
+          </div>
+          <div class="form-group">
+            <label>Run Sign Off By</label>
+            <input type="text" id="ccp3-run_sign_off_by" value="Fernanda Benavides (fbenavides)">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Critical Limits -->
+    <div class="section">
+      <div class="section-header collapsed" onclick="toggleSection(this)">
+        <span>Critical Limits</span>
+        <span class="chevron">&#9660;</span>
+      </div>
+      <div class="section-body">
+        <div class="form-grid">
+          <div class="form-group full-width">
+            <label>Critical Limits Text</label>
+            <textarea id="ccp3-critical_limits_text">All meat or poultry fillings must be chilled to reduce internal temperature from 130 F to <= 80 F in <= 1.5 hours (CHILLING 1) and from 80 F to <= 40 F in <= 5 hours (CHILLING 2).</textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Baking Start Chilling -->
+    <div class="section">
+      <div class="section-header" onclick="toggleSection(this)">
+        <span>Baking Start Chilling</span>
+        <span class="chevron">&#9660;</span>
+      </div>
+      <div class="section-body">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Batch Number</label>
+            <input type="number" id="ccp3-baking_start_chilling-batch_number" value="1">
+          </div>
+          <div class="form-group">
+            <label>Rack Number</label>
+            <input type="number" id="ccp3-baking_start_chilling-rack_number" value="1">
+          </div>
+          <div class="form-group">
+            <label>Temperature (&deg;F)</label>
+            <input type="number" step="0.1" id="ccp3-baking_start_chilling-temperature" value="138.0">
+          </div>
+          <div class="form-group">
+            <label>Date/Time</label>
+            <input type="text" id="ccp3-baking_start_chilling-date_time" value="">
+          </div>
+          <div class="form-group checkbox-group">
+            <input type="checkbox" id="ccp3-baking_start_chilling-passed" checked>
+            <label for="ccp3-baking_start_chilling-passed">Passed</label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Baking Chilling 1 -->
+    <div class="section">
+      <div class="section-header" onclick="toggleSection(this)">
+        <span>Baking Chilling 1</span>
+        <span class="chevron">&#9660;</span>
+      </div>
+      <div class="section-body">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Temperature (&deg;F)</label>
+            <input type="number" step="0.1" id="ccp3-baking_chilling_1-temperature" value="80.0">
+          </div>
+          <div class="form-group">
+            <label>USL (&deg;F)</label>
+            <input type="number" step="0.1" id="ccp3-baking_chilling_1-usl" value="80.0">
+          </div>
+          <div class="form-group">
+            <label>Date/Time</label>
+            <input type="text" id="ccp3-baking_chilling_1-date_time" value="">
+          </div>
+          <div class="form-group checkbox-group">
+            <input type="checkbox" id="ccp3-baking_chilling_1-passed" checked>
+            <label for="ccp3-baking_chilling_1-passed">Passed</label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Baking Chilling 2 -->
+    <div class="section">
+      <div class="section-header" onclick="toggleSection(this)">
+        <span>Baking Chilling 2</span>
+        <span class="chevron">&#9660;</span>
+      </div>
+      <div class="section-body">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Temperature (&deg;F)</label>
+            <input type="number" step="0.1" id="ccp3-baking_chilling_2-temperature" value="0.0">
+          </div>
+          <div class="form-group">
+            <label>Date/Time</label>
+            <input type="text" id="ccp3-baking_chilling_2-date_time" value="">
+          </div>
+          <div class="form-group checkbox-group">
+            <input type="checkbox" id="ccp3-baking_chilling_2-passed">
+            <label for="ccp3-baking_chilling_2-passed">Passed</label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Direct Observation -->
+    <div class="section">
+      <div class="section-header" onclick="toggleSection(this)">
+        <span>Direct Observation</span>
+        <span class="chevron">&#9660;</span>
+      </div>
+      <div class="section-body">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Verified By</label>
+            <input type="text" id="ccp3-direct_observation-verified_by" value="Sandra Echeverry">
+          </div>
+          <div class="form-group">
+            <label>Time</label>
+            <input type="text" id="ccp3-direct_observation-time" value="">
+          </div>
+          <div class="form-group">
+            <label>Results</label>
+            <input type="text" id="ccp3-direct_observation-results" value="Acceptable Monitoring Procedures">
+          </div>
+          <div class="form-group full-width">
+            <label>Comments</label>
+            <textarea id="ccp3-direct_observation-comments"></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Linked Items -->
+    <div class="section">
+      <div class="section-header" onclick="toggleSection(this)">
+        <span>Linked Items</span>
+        <span class="chevron">&#9660;</span>
+      </div>
+      <div class="section-body">
+        <div class="form-grid">
+          <div class="form-group full-width">
+            <label>Linked Items (one per line)</label>
+            <textarea id="ccp3-linked_items" rows="4">Quality Check - Empanada (USDA/FDA) HACCP Record (CCP 3B) FSQ-2.4.3.12-CCP-3B - Pass
+Action Review - Baking Line Empanada (USDA/FDA) HACCP Record (CCP 3B) Review
+Action Review - Empanada (USDA/FDA) HACCP Record (CCP 4B) Pre-Shipment Review
+Action Review - Baking Line Empanada (USDA/FDA) HACCP Record (CCP 4B) Review</textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="submit-bar">
+      <button class="btn btn-primary" onclick="submitForm('ccp3')">Send CCP3 to OPC Server</button>
+      <button class="btn btn-secondary" onclick="prefillTimestamps('ccp3')">Fill Timestamps with Now</button>
+    </div>
+  </div>
+
+  <!-- ======================== MONITOR ======================== -->
+  <div class="monitor">
+    <div class="monitor-header">
+      <span><span class="dot gray" id="monitor-dot"></span> Submission Monitor</span>
+      <span style="font-size:0.8rem;color:var(--text-light)" id="monitor-poll-info">Auto-refresh every 2s</span>
+    </div>
+    <div class="monitor-body" id="monitor-body">
+      <div class="monitor-empty" id="monitor-empty">
+        No submissions yet. Fill in a form above and click Send.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── Tab switching ──────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.form-panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('panel-' + tab.dataset.form).classList.add('active');
+  });
+});
+
+// ── Section collapse ───────────────────────────────────────────
+function toggleSection(header) {
+  header.classList.toggle('collapsed');
+}
+
+// ── Toast notification ─────────────────────────────────────────
+function showToast(message, type) {
+  const toast = document.getElementById('toast');
+  toast.textContent = message;
+  toast.className = 'toast ' + type + ' show';
+  setTimeout(() => toast.classList.remove('show'), 3500);
+}
+
+// ── Fill timestamp fields with current time ────────────────────
+function fmtNow() {
+  const d = new Date();
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const month = months[d.getMonth()];
+  const day = String(d.getDate()).padStart(2, '0');
+  const year = d.getFullYear();
+  let hours = d.getHours();
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12 || 12;
+  const mins = String(d.getMinutes()).padStart(2, '0');
+  return month + '-' + day + '-' + year + ' ' + String(hours).padStart(2, '0') + ':' + mins + ' ' + ampm;
+}
+
+function prefillTimestamps(formType) {
+  const now = fmtNow();
+  const timeFields = document.querySelectorAll('#panel-' + formType + ' input[type="text"]');
+  timeFields.forEach(input => {
+    const id = input.id;
+    if (id.includes('time') || id.includes('date')) {
+      if (!input.value.trim()) {
+        input.value = now;
+      }
+    }
+  });
+  showToast('Timestamps filled', 'success');
+}
+
+// ── Collect form data into JSON structure ──────────────────────
+const CCP1_HEADER_FIELDS = [
+  'quality_check_id','form_name','authenticated_by','auth_time','triggered_by',
+  'trigger_time','assigned_to','signed_off_by','sign_off_time','location',
+  'product','sku','run_id','custom_reference','run_start_date','run_end_date',
+  'run_sign_off_time','run_sign_off_by'
+];
+
+const CCP1_CHILLING_FIELDS = ['batch_number','temperature','time','passed'];
+
+function collectCCP1() {
+  const header = {};
+  CCP1_HEADER_FIELDS.forEach(f => {
+    header[f] = document.getElementById('ccp1-' + f).value;
+  });
+
+  function chillingSection(prefix) {
+    return {
+      batch_number: parseInt(document.getElementById(prefix + '-batch_number').value) || 0,
+      temperature: parseFloat(document.getElementById(prefix + '-temperature').value) || 0.0,
+      time: document.getElementById(prefix + '-time').value,
+      passed: document.getElementById(prefix + '-passed').checked
+    };
+  }
+
+  return {
+    header: header,
+    critical_limits_text: document.getElementById('ccp1-critical_limits_text').value,
+    start_chilling: chillingSection('ccp1-start_chilling'),
+    chilling_process_1: chillingSection('ccp1-chilling_process_1'),
+    chilling_process_2: chillingSection('ccp1-chilling_process_2'),
+    direct_observation: {
+      verified_by: document.getElementById('ccp1-direct_observation-verified_by').value,
+      time: document.getElementById('ccp1-direct_observation-time').value,
+      results: document.getElementById('ccp1-direct_observation-results').value
+    }
+  };
+}
+
+function collectCCP3() {
+  const header = {};
+  CCP1_HEADER_FIELDS.forEach(f => {
+    header[f] = document.getElementById('ccp3-' + f).value;
+  });
+
+  return {
+    header: header,
+    critical_limits_text: document.getElementById('ccp3-critical_limits_text').value,
+    baking_start_chilling: {
+      batch_number: parseInt(document.getElementById('ccp3-baking_start_chilling-batch_number').value) || 0,
+      rack_number: parseInt(document.getElementById('ccp3-baking_start_chilling-rack_number').value) || 0,
+      temperature: parseFloat(document.getElementById('ccp3-baking_start_chilling-temperature').value) || 0.0,
+      date_time: document.getElementById('ccp3-baking_start_chilling-date_time').value,
+      passed: document.getElementById('ccp3-baking_start_chilling-passed').checked
+    },
+    baking_chilling_1: {
+      temperature: parseFloat(document.getElementById('ccp3-baking_chilling_1-temperature').value) || 0.0,
+      usl: parseFloat(document.getElementById('ccp3-baking_chilling_1-usl').value) || 0.0,
+      date_time: document.getElementById('ccp3-baking_chilling_1-date_time').value,
+      passed: document.getElementById('ccp3-baking_chilling_1-passed').checked
+    },
+    baking_chilling_2: {
+      temperature: parseFloat(document.getElementById('ccp3-baking_chilling_2-temperature').value) || 0.0,
+      date_time: document.getElementById('ccp3-baking_chilling_2-date_time').value,
+      passed: document.getElementById('ccp3-baking_chilling_2-passed').checked
+    },
+    direct_observation: {
+      verified_by: document.getElementById('ccp3-direct_observation-verified_by').value,
+      time: document.getElementById('ccp3-direct_observation-time').value,
+      results: document.getElementById('ccp3-direct_observation-results').value,
+      comments: document.getElementById('ccp3-direct_observation-comments').value
+    },
+    linked_items: document.getElementById('ccp3-linked_items').value
+      .split('\n').map(s => s.trim()).filter(s => s.length > 0)
+  };
+}
+
+// ── Submit form ────────────────────────────────────────────────
+async function submitForm(formType) {
+  const data = formType === 'ccp1' ? collectCCP1() : collectCCP3();
+  const payload = {};
+  payload[formType] = data;
+
+  try {
+    const resp = await fetch('/api/forms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!resp.ok) {
+      const err = await resp.json();
+      showToast('Error: ' + (err.error || resp.statusText), 'error');
+      return;
+    }
+    showToast(formType.toUpperCase() + ' form submitted successfully', 'success');
+    refreshMonitor();
+  } catch (e) {
+    showToast('Network error: ' + e.message, 'error');
+  }
+}
+
+// ── Monitor refresh ────────────────────────────────────────────
+let monitorInterval = null;
+
+function renderLogEntry(entry) {
+  const isReceived = entry.received;
+  const badgeClass = isReceived ? 'badge-received' : 'badge-pending';
+  const badgeText = isReceived ? 'Received by OPC' : 'Pending';
+  const formType = entry.form_type.toUpperCase();
+
+  // Build a short summary from the data
+  let summary = formType;
+  const d = entry.data[entry.form_type] || entry.data;
+  if (d.header) {
+    summary += ' - ' + (d.header.product || 'N/A') + ' (' + (d.header.sku || '') + ')';
+  }
+  if (d.start_chilling) {
+    summary += ' | Start: ' + d.start_chilling.temperature + '\u00B0F';
+  }
+  if (d.baking_start_chilling) {
+    summary += ' | Start: ' + d.baking_start_chilling.temperature + '\u00B0F';
+  }
+
+  const receivedInfo = isReceived
+    ? ' | OPC polled at ' + entry.received_at
+    : '';
+
+  const entryId = 'log-' + entry.id;
+  return '<div class="log-entry">' +
+    '<span class="log-badge ' + badgeClass + '">' + badgeText + '</span>' +
+    '<div class="log-details">' +
+      '<div class="log-meta">#' + entry.id + ' &middot; Sent ' + entry.submitted_at + receivedInfo + '</div>' +
+      '<div class="log-summary">' + escapeHtml(summary) + '</div>' +
+      '<span class="log-json-toggle" onclick="toggleJson(\'' + entryId + '\')">Show JSON</span>' +
+      '<pre class="log-json" id="' + entryId + '">' + escapeHtml(JSON.stringify(entry.data, null, 2)) + '</pre>' +
+    '</div>' +
+  '</div>';
+}
+
+function escapeHtml(text) {
+  const d = document.createElement('div');
+  d.textContent = text;
+  return d.innerHTML;
+}
+
+function toggleJson(id) {
+  document.getElementById(id).classList.toggle('open');
+}
+
+async function refreshMonitor() {
+  try {
+    const resp = await fetch('/api/status');
+    if (!resp.ok) return;
+    const status = await resp.json();
+
+    const dot = document.getElementById('monitor-dot');
+    const body = document.getElementById('monitor-body');
+    const empty = document.getElementById('monitor-empty');
+    const pollInfo = document.getElementById('monitor-poll-info');
+
+    if (status.last_opc_poll_at) {
+      pollInfo.textContent = 'OPC last polled: ' + status.last_opc_poll_at;
+      dot.className = 'dot green';
+    } else {
+      pollInfo.textContent = 'OPC has not polled yet';
+      dot.className = 'dot gray';
+    }
+
+    const entries = status.submissions || [];
+    if (entries.length === 0) {
+      if (empty) empty.style.display = '';
+      return;
+    }
+
+    if (empty) empty.style.display = 'none';
+
+    // Build HTML (newest first)
+    let html = '';
+    for (let i = entries.length - 1; i >= 0; i--) {
+      html += renderLogEntry(entries[i]);
+    }
+    // Keep only the log entries, preserve the empty div
+    const emptyDiv = '<div class="monitor-empty" id="monitor-empty" style="display:none">No submissions yet.</div>';
+    body.innerHTML = emptyDiv + html;
+  } catch (e) {
+    // Silently ignore fetch errors during polling
+  }
+}
+
+// Start monitor auto-refresh
+monitorInterval = setInterval(refreshMonitor, 2000);
+refreshMonitor();
+</script>
+
+</body>
+</html>
