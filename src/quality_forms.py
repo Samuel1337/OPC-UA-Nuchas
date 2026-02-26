@@ -1,18 +1,113 @@
 """
 Quality check form definitions for HACCP CCP records.
 
-Defines the OPC UA address space structure for CCP1 (Cooking/Kettle chilling)
-and CCP3 (Baking/Line chilling) quality check forms.
+Provides a generic, dynamic approach to creating and updating OPC UA nodes
+from arbitrary quality form JSON payloads.  The server does not need to know
+the form schema in advance — nodes are created on first encounter and updated
+in place on subsequent polls.  Missing fields are left at their last value.
+
+Also retains typed dataclasses and specific parsers for CCP1/CCP3 as
+documentation and for unit testing.
 """
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
 
 from asyncua import Server, ua
 
 logger = logging.getLogger(__name__)
 
+# ── Display-name helpers ─────────────────────────────────────────
+
+_ABBREVIATIONS = {"id": "ID", "sku": "SKU", "usl": "USL", "url": "URL"}
+
+
+def _snake_to_display(key: str) -> str:
+    """Convert a snake_case key to PascalCase for OPC UA display names."""
+    parts = key.split("_")
+    return "".join(_ABBREVIATIONS.get(p.lower(), p.capitalize()) for p in parts)
+
+
+# ── OPC UA type detection ────────────────────────────────────────
+
+def _detect_variant(value):
+    """Return (VariantType, coerced_value) for a Python value."""
+    # bool check must come before int (bool is a subclass of int)
+    if isinstance(value, bool):
+        return ua.VariantType.Boolean, value
+    if isinstance(value, int):
+        return ua.VariantType.Int64, value
+    if isinstance(value, float):
+        return ua.VariantType.Double, value
+    if isinstance(value, list):
+        return ua.VariantType.String, "; ".join(str(v) for v in value)
+    return ua.VariantType.String, str(value) if value is not None else ""
+
+
+def _coerce_to_variant(value, variant_type):
+    """Coerce a Python value to match an existing node's variant type."""
+    if variant_type == ua.VariantType.Boolean:
+        return bool(value)
+    if variant_type == ua.VariantType.Int64:
+        return int(value) if value is not None else 0
+    if variant_type == ua.VariantType.Double:
+        return float(value) if value is not None else 0.0
+    if isinstance(value, list):
+        return "; ".join(str(v) for v in value)
+    return str(value) if value is not None else ""
+
+
+# ── Dynamic form node registry ───────────────────────────────────
+
+@dataclass
+class FormNodeRegistry:
+    """Tracks the OPC UA folder and variable nodes for a single form type."""
+    root_folder: object
+    nodes: dict[str, object] = field(default_factory=dict)
+    node_types: dict[str, object] = field(default_factory=dict)
+    folders: dict[str, object] = field(default_factory=dict)
+
+
+async def create_or_update_form_nodes(
+    registry: FormNodeRegistry,
+    idx: int,
+    data: dict,
+    prefix: str = "",
+) -> None:
+    """Create or update OPC UA nodes from a form data dict.
+
+    - New keys  → new folder/variable nodes are created automatically
+    - Existing keys → variable nodes are updated with the new value
+    - Missing keys  → nodes are left at their last written value
+    """
+    parent = registry.folders.get(prefix, registry.root_folder)
+
+    for key, value in data.items():
+        node_key = f"{prefix}.{key}" if prefix else key
+
+        if isinstance(value, dict):
+            if node_key not in registry.folders:
+                folder = await parent.add_folder(idx, _snake_to_display(key))
+                registry.folders[node_key] = folder
+            await create_or_update_form_nodes(registry, idx, value, prefix=node_key)
+        else:
+            if node_key in registry.nodes:
+                # Update existing node, coercing to its established type
+                vtype = registry.node_types[node_key]
+                coerced = _coerce_to_variant(value, vtype)
+                await registry.nodes[node_key].write_value(coerced)
+            else:
+                # Create new variable node
+                variant_type, coerced_value = _detect_variant(value)
+                node = await parent.add_variable(
+                    idx, _snake_to_display(key), coerced_value, variant_type
+                )
+                await node.set_writable(False)
+                registry.nodes[node_key] = node
+                registry.node_types[node_key] = variant_type
+
+
+# ── Typed dataclasses (documentation + unit tests) ───────────────
 
 @dataclass
 class FormHeader:
@@ -92,297 +187,7 @@ class CCP3Form:
     linked_items: list[str] = field(default_factory=list)
 
 
-async def _add_header_nodes(parent, idx: int) -> dict[str, object]:
-    """Create OPC UA nodes for the shared form header fields."""
-    folder = await parent.add_folder(idx, "Header")
-    nodes = {}
-    string_fields = [
-        ("QualityCheckID", "quality_check_id"),
-        ("FormName", "form_name"),
-        ("AuthenticatedBy", "authenticated_by"),
-        ("AuthTime", "auth_time"),
-        ("TriggeredBy", "triggered_by"),
-        ("TriggerTime", "trigger_time"),
-        ("AssignedTo", "assigned_to"),
-        ("SignedOffBy", "signed_off_by"),
-        ("SignOffTime", "sign_off_time"),
-        ("Location", "location"),
-        ("Product", "product"),
-        ("SKU", "sku"),
-        ("RunID", "run_id"),
-        ("CustomReference", "custom_reference"),
-        ("RunStartDate", "run_start_date"),
-        ("RunEndDate", "run_end_date"),
-        ("RunSignOffTime", "run_sign_off_time"),
-        ("RunSignOffBy", "run_sign_off_by"),
-    ]
-    for display_name, key in string_fields:
-        nodes[f"header_{key}"] = await folder.add_variable(
-            idx, display_name, "", ua.VariantType.String
-        )
-    return nodes
-
-
-async def _add_chilling_nodes(parent, idx: int, folder_name: str, prefix: str) -> dict[str, object]:
-    """Create OPC UA nodes for a chilling record (CCP1-style)."""
-    folder = await parent.add_folder(idx, folder_name)
-    nodes = {}
-    nodes[f"{prefix}_batch_number"] = await folder.add_variable(
-        idx, "BatchNumber", 0, ua.VariantType.Int64
-    )
-    nodes[f"{prefix}_temperature"] = await folder.add_variable(
-        idx, "Temperature", 0.0, ua.VariantType.Double
-    )
-    nodes[f"{prefix}_time"] = await folder.add_variable(
-        idx, "Time", "", ua.VariantType.String
-    )
-    nodes[f"{prefix}_passed"] = await folder.add_variable(
-        idx, "Pass", False, ua.VariantType.Boolean
-    )
-    return nodes
-
-
-async def _add_direct_observation_nodes(parent, idx: int, prefix: str, include_comments: bool = False) -> dict[str, object]:
-    """Create OPC UA nodes for direct observation section."""
-    folder = await parent.add_folder(idx, "DirectObservation")
-    nodes = {}
-    nodes[f"{prefix}_verified_by"] = await folder.add_variable(
-        idx, "VerifiedBy", "", ua.VariantType.String
-    )
-    nodes[f"{prefix}_time"] = await folder.add_variable(
-        idx, "Time", "", ua.VariantType.String
-    )
-    nodes[f"{prefix}_results"] = await folder.add_variable(
-        idx, "Results", "", ua.VariantType.String
-    )
-    if include_comments:
-        nodes[f"{prefix}_comments"] = await folder.add_variable(
-            idx, "Comments", "", ua.VariantType.String
-        )
-    return nodes
-
-
-async def create_ccp1_nodes(server: Server, idx: int, parent) -> dict[str, object]:
-    """Build the full OPC UA address space for a CCP1 form."""
-    ccp1_folder = await parent.add_folder(idx, "CCP1")
-    nodes = {}
-
-    # Critical limits text
-    nodes["ccp1_critical_limits"] = await ccp1_folder.add_variable(
-        idx, "CriticalLimitsText", "", ua.VariantType.String
-    )
-
-    # Header
-    header_nodes = await _add_header_nodes(ccp1_folder, idx)
-    nodes.update({f"ccp1_{k}": v for k, v in header_nodes.items()})
-
-    # Start Chilling
-    sc_nodes = await _add_chilling_nodes(ccp1_folder, idx, "StartChilling", "start_chilling")
-    nodes.update({f"ccp1_{k}": v for k, v in sc_nodes.items()})
-
-    # Chilling Process 1
-    c1_nodes = await _add_chilling_nodes(ccp1_folder, idx, "ChillingProcess1", "chilling1")
-    nodes.update({f"ccp1_{k}": v for k, v in c1_nodes.items()})
-
-    # Chilling Process 2
-    c2_nodes = await _add_chilling_nodes(ccp1_folder, idx, "ChillingProcess2", "chilling2")
-    nodes.update({f"ccp1_{k}": v for k, v in c2_nodes.items()})
-
-    # Direct Observation
-    do_nodes = await _add_direct_observation_nodes(ccp1_folder, idx, "obs")
-    nodes.update({f"ccp1_{k}": v for k, v in do_nodes.items()})
-
-    # Make all read-only
-    for node in nodes.values():
-        await node.set_writable(False)
-
-    logger.info("CCP1 quality form nodes created")
-    return nodes
-
-
-async def create_ccp3_nodes(server: Server, idx: int, parent) -> dict[str, object]:
-    """Build the full OPC UA address space for a CCP3 form."""
-    ccp3_folder = await parent.add_folder(idx, "CCP3")
-    nodes = {}
-
-    # Critical limits text
-    nodes["ccp3_critical_limits"] = await ccp3_folder.add_variable(
-        idx, "CriticalLimitsText", "", ua.VariantType.String
-    )
-
-    # Header
-    header_nodes = await _add_header_nodes(ccp3_folder, idx)
-    nodes.update({f"ccp3_{k}": v for k, v in header_nodes.items()})
-
-    # Baking Start Chilling
-    bsc_folder = await ccp3_folder.add_folder(idx, "BakingStartChilling")
-    nodes["ccp3_bsc_batch_number"] = await bsc_folder.add_variable(
-        idx, "BatchNumber", 0, ua.VariantType.Int64
-    )
-    nodes["ccp3_bsc_rack_number"] = await bsc_folder.add_variable(
-        idx, "RackNumber", 0, ua.VariantType.Int64
-    )
-    nodes["ccp3_bsc_temperature"] = await bsc_folder.add_variable(
-        idx, "Temperature", 0.0, ua.VariantType.Double
-    )
-    nodes["ccp3_bsc_date_time"] = await bsc_folder.add_variable(
-        idx, "DateTime", "", ua.VariantType.String
-    )
-    nodes["ccp3_bsc_passed"] = await bsc_folder.add_variable(
-        idx, "Pass", False, ua.VariantType.Boolean
-    )
-
-    # Baking Chilling 1
-    bc1_folder = await ccp3_folder.add_folder(idx, "BakingChilling1")
-    nodes["ccp3_bc1_temperature"] = await bc1_folder.add_variable(
-        idx, "Temperature", 0.0, ua.VariantType.Double
-    )
-    nodes["ccp3_bc1_usl"] = await bc1_folder.add_variable(
-        idx, "USL", 0.0, ua.VariantType.Double
-    )
-    nodes["ccp3_bc1_date_time"] = await bc1_folder.add_variable(
-        idx, "DateTime", "", ua.VariantType.String
-    )
-    nodes["ccp3_bc1_passed"] = await bc1_folder.add_variable(
-        idx, "Pass", False, ua.VariantType.Boolean
-    )
-
-    # Baking Chilling 2
-    bc2_folder = await ccp3_folder.add_folder(idx, "BakingChilling2")
-    nodes["ccp3_bc2_temperature"] = await bc2_folder.add_variable(
-        idx, "Temperature", 0.0, ua.VariantType.Double
-    )
-    nodes["ccp3_bc2_date_time"] = await bc2_folder.add_variable(
-        idx, "DateTime", "", ua.VariantType.String
-    )
-    nodes["ccp3_bc2_passed"] = await bc2_folder.add_variable(
-        idx, "Pass", False, ua.VariantType.Boolean
-    )
-
-    # Direct Observation (with comments for CCP3)
-    do_nodes = await _add_direct_observation_nodes(ccp3_folder, idx, "obs", include_comments=True)
-    nodes.update({f"ccp3_{k}": v for k, v in do_nodes.items()})
-
-    # Linked Items (semicolon-delimited string)
-    nodes["ccp3_linked_items"] = await ccp3_folder.add_variable(
-        idx, "LinkedItems", "", ua.VariantType.String
-    )
-
-    # Make all read-only
-    for node in nodes.values():
-        await node.set_writable(False)
-
-    logger.info("CCP3 quality form nodes created")
-    return nodes
-
-
-async def update_ccp1_nodes(nodes: dict[str, object], form: CCP1Form) -> None:
-    """Write CCP1 form data into OPC UA nodes."""
-    h = form.header
-    await nodes["ccp1_header_quality_check_id"].write_value(h.quality_check_id)
-    await nodes["ccp1_header_form_name"].write_value(h.form_name)
-    await nodes["ccp1_header_authenticated_by"].write_value(h.authenticated_by)
-    await nodes["ccp1_header_auth_time"].write_value(h.auth_time)
-    await nodes["ccp1_header_triggered_by"].write_value(h.triggered_by)
-    await nodes["ccp1_header_trigger_time"].write_value(h.trigger_time)
-    await nodes["ccp1_header_assigned_to"].write_value(h.assigned_to)
-    await nodes["ccp1_header_signed_off_by"].write_value(h.signed_off_by)
-    await nodes["ccp1_header_sign_off_time"].write_value(h.sign_off_time)
-    await nodes["ccp1_header_location"].write_value(h.location)
-    await nodes["ccp1_header_product"].write_value(h.product)
-    await nodes["ccp1_header_sku"].write_value(h.sku)
-    await nodes["ccp1_header_run_id"].write_value(h.run_id)
-    await nodes["ccp1_header_custom_reference"].write_value(h.custom_reference)
-    await nodes["ccp1_header_run_start_date"].write_value(h.run_start_date)
-    await nodes["ccp1_header_run_end_date"].write_value(h.run_end_date)
-    await nodes["ccp1_header_run_sign_off_time"].write_value(h.run_sign_off_time)
-    await nodes["ccp1_header_run_sign_off_by"].write_value(h.run_sign_off_by)
-
-    await nodes["ccp1_critical_limits"].write_value(form.critical_limits_text)
-
-    # Start Chilling
-    sc = form.start_chilling
-    await nodes["ccp1_start_chilling_batch_number"].write_value(sc.batch_number)
-    await nodes["ccp1_start_chilling_temperature"].write_value(sc.temperature)
-    await nodes["ccp1_start_chilling_time"].write_value(sc.time)
-    await nodes["ccp1_start_chilling_passed"].write_value(sc.passed)
-
-    # Chilling Process 1
-    c1 = form.chilling_process_1
-    await nodes["ccp1_chilling1_batch_number"].write_value(c1.batch_number)
-    await nodes["ccp1_chilling1_temperature"].write_value(c1.temperature)
-    await nodes["ccp1_chilling1_time"].write_value(c1.time)
-    await nodes["ccp1_chilling1_passed"].write_value(c1.passed)
-
-    # Chilling Process 2
-    c2 = form.chilling_process_2
-    await nodes["ccp1_chilling2_batch_number"].write_value(c2.batch_number)
-    await nodes["ccp1_chilling2_temperature"].write_value(c2.temperature)
-    await nodes["ccp1_chilling2_time"].write_value(c2.time)
-    await nodes["ccp1_chilling2_passed"].write_value(c2.passed)
-
-    # Direct Observation
-    do = form.direct_observation
-    await nodes["ccp1_obs_verified_by"].write_value(do.verified_by)
-    await nodes["ccp1_obs_time"].write_value(do.time)
-    await nodes["ccp1_obs_results"].write_value(do.results)
-
-
-async def update_ccp3_nodes(nodes: dict[str, object], form: CCP3Form) -> None:
-    """Write CCP3 form data into OPC UA nodes."""
-    h = form.header
-    await nodes["ccp3_header_quality_check_id"].write_value(h.quality_check_id)
-    await nodes["ccp3_header_form_name"].write_value(h.form_name)
-    await nodes["ccp3_header_authenticated_by"].write_value(h.authenticated_by)
-    await nodes["ccp3_header_auth_time"].write_value(h.auth_time)
-    await nodes["ccp3_header_triggered_by"].write_value(h.triggered_by)
-    await nodes["ccp3_header_trigger_time"].write_value(h.trigger_time)
-    await nodes["ccp3_header_assigned_to"].write_value(h.assigned_to)
-    await nodes["ccp3_header_signed_off_by"].write_value(h.signed_off_by)
-    await nodes["ccp3_header_sign_off_time"].write_value(h.sign_off_time)
-    await nodes["ccp3_header_location"].write_value(h.location)
-    await nodes["ccp3_header_product"].write_value(h.product)
-    await nodes["ccp3_header_sku"].write_value(h.sku)
-    await nodes["ccp3_header_run_id"].write_value(h.run_id)
-    await nodes["ccp3_header_custom_reference"].write_value(h.custom_reference)
-    await nodes["ccp3_header_run_start_date"].write_value(h.run_start_date)
-    await nodes["ccp3_header_run_end_date"].write_value(h.run_end_date)
-    await nodes["ccp3_header_run_sign_off_time"].write_value(h.run_sign_off_time)
-    await nodes["ccp3_header_run_sign_off_by"].write_value(h.run_sign_off_by)
-
-    await nodes["ccp3_critical_limits"].write_value(form.critical_limits_text)
-
-    # Baking Start Chilling
-    bsc = form.baking_start_chilling
-    await nodes["ccp3_bsc_batch_number"].write_value(bsc.batch_number)
-    await nodes["ccp3_bsc_rack_number"].write_value(bsc.rack_number)
-    await nodes["ccp3_bsc_temperature"].write_value(bsc.temperature)
-    await nodes["ccp3_bsc_date_time"].write_value(bsc.date_time)
-    await nodes["ccp3_bsc_passed"].write_value(bsc.passed)
-
-    # Baking Chilling 1
-    bc1 = form.baking_chilling_1
-    await nodes["ccp3_bc1_temperature"].write_value(bc1.temperature)
-    await nodes["ccp3_bc1_usl"].write_value(bc1.usl)
-    await nodes["ccp3_bc1_date_time"].write_value(bc1.date_time)
-    await nodes["ccp3_bc1_passed"].write_value(bc1.passed)
-
-    # Baking Chilling 2
-    bc2 = form.baking_chilling_2
-    await nodes["ccp3_bc2_temperature"].write_value(bc2.temperature)
-    await nodes["ccp3_bc2_date_time"].write_value(bc2.date_time)
-    await nodes["ccp3_bc2_passed"].write_value(bc2.passed)
-
-    # Direct Observation
-    do = form.direct_observation
-    await nodes["ccp3_obs_verified_by"].write_value(do.verified_by)
-    await nodes["ccp3_obs_time"].write_value(do.time)
-    await nodes["ccp3_obs_results"].write_value(do.results)
-    await nodes["ccp3_obs_comments"].write_value(do.comments)
-
-    # Linked Items
-    await nodes["ccp3_linked_items"].write_value("; ".join(form.linked_items))
-
+# ── JSON parsers (used by tests, kept for schema documentation) ──
 
 def parse_ccp1_json(data: dict) -> CCP1Form:
     """Parse a JSON dict into a CCP1Form dataclass."""

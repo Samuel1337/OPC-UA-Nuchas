@@ -1,9 +1,8 @@
 """
-Mock JSON API server for testing the OPC UA SPC server.
+Mock JSON API server for testing the OPC UA server.
 
-Generates random measurement data and realistic HACCP quality check
-form data (CCP1/CCP3) over HTTP so you can run the full pipeline
-without an external data source.
+Generates realistic HACCP quality check form data (CCP1/CCP3) over HTTP
+so you can run the full pipeline without an external data source.
 
 Usage:
     source .venv/bin/activate
@@ -11,14 +10,12 @@ Usage:
     python -m src.mock_api --port 9090  # custom port
 
 Endpoints:
-    GET /api/data   - SPC measurement values
     GET /api/forms  - CCP1 and CCP3 quality check form data
     GET /health     - Health check
 """
 
 import argparse
 import json
-import math
 import random
 import time
 from datetime import datetime, timedelta
@@ -42,29 +39,15 @@ def _fmt_time(offset_minutes: float = 0) -> str:
 
 
 class MockAPIHandler(BaseHTTPRequestHandler):
-    """Serves synthetic SPC data and HACCP quality form data."""
-
-    # Simulated process: target=10.0, natural variation ~0.5
-    TARGET = 10.0
-    NOISE = 0.5
+    """Serves synthetic HACCP quality form data."""
 
     def do_GET(self):
-        if self.path == "/api/data":
-            self._serve_data()
-        elif self.path == "/api/forms":
+        if self.path == "/api/forms":
             self._serve_forms()
         elif self.path == "/health":
             self._respond(200, {"status": "ok"})
         else:
             self._respond(404, {"error": "not found"})
-
-    def _serve_data(self):
-        drift = 0.3 * math.sin(time.time() / 30)
-        values = [
-            round(self.TARGET + drift + random.gauss(0, self.NOISE), 4)
-            for _ in range(5)
-        ]
-        self._respond(200, {"values": values})
 
     def _serve_forms(self):
         elapsed = _minutes_elapsed()
@@ -201,13 +184,12 @@ class MockAPIHandler(BaseHTTPRequestHandler):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Mock JSON API for SPC + HACCP data")
+    parser = argparse.ArgumentParser(description="Mock JSON API for HACCP data")
     parser.add_argument("--port", type=int, default=8080, help="Port to listen on")
     args = parser.parse_args()
 
     server = HTTPServer(("0.0.0.0", args.port), MockAPIHandler)
     print(f"Mock API serving at http://0.0.0.0:{args.port}")
-    print(f"  GET /api/data   - SPC measurement values")
     print(f"  GET /api/forms  - CCP1 & CCP3 quality check forms")
     try:
         server.serve_forever()

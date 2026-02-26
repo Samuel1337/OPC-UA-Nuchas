@@ -18,12 +18,8 @@ from asyncua import Server, ua
 from src.api_client import APIClient
 from src.config import AppConfig, load_config
 from src.quality_forms import (
-    create_ccp1_nodes,
-    create_ccp3_nodes,
-    parse_ccp1_json,
-    parse_ccp3_json,
-    update_ccp1_nodes,
-    update_ccp3_nodes,
+    FormNodeRegistry,
+    create_or_update_form_nodes,
 )
 from src.spc import SPCCalculator, SPCResult
 
@@ -52,8 +48,9 @@ class OPCUASPCServer:
         self._forms_client: APIClient | None = None
         self._running = False
         self._nodes: dict[str, object] = {}
-        self._ccp1_nodes: dict[str, object] = {}
-        self._ccp3_nodes: dict[str, object] = {}
+        self._form_registries: dict[str, FormNodeRegistry] = {}
+        self._forms_folder = None
+        self._idx: int = 0
 
     async def init(self) -> None:
         """Initialize the OPC UA server and create the address space."""
@@ -62,6 +59,7 @@ class OPCUASPCServer:
         self.server.set_server_name(self.config.server.name)
 
         idx = await self.server.register_namespace(self.config.server.uri)
+        self._idx = idx
 
         # ── Root folder ────────────────────────────────────────────
         spc_folder = await self.server.nodes.objects.add_folder(idx, "SPC")
@@ -148,12 +146,10 @@ class OPCUASPCServer:
         for node in self._nodes.values():
             await node.set_writable(False)
 
-        # ── Quality Check Forms ──────────────────────────────────
-        forms_folder = await self.server.nodes.objects.add_folder(idx, "QualityForms")
-        self._ccp1_nodes = await create_ccp1_nodes(self.server, idx, forms_folder)
-        self._ccp3_nodes = await create_ccp3_nodes(self.server, idx, forms_folder)
+        # ── Quality Check Forms (dynamic — populated on first API poll) ──
+        self._forms_folder = await self.server.nodes.objects.add_folder(idx, "QualityForms")
 
-        logger.info("OPC UA address space initialized with SPC + quality form nodes")
+        logger.info("OPC UA address space initialized")
 
     async def _update_nodes(self, result: SPCResult) -> None:
         """Write SPC result values into OPC UA nodes."""
@@ -178,7 +174,12 @@ class OPCUASPCServer:
         await self._nodes["r_ooc_count"].write_value(len(result.r_ooc_points))
 
     async def _fetch_forms(self) -> None:
-        """Fetch quality form JSON from the forms API and update OPC UA nodes."""
+        """Fetch quality form JSON from the forms API and update OPC UA nodes.
+
+        Handles any number of form types dynamically.  New form types get
+        a folder created on first encounter.  Missing fields in a form
+        update are left at their last written value.
+        """
         if not self._forms_client:
             return
         try:
@@ -191,15 +192,28 @@ class OPCUASPCServer:
             logger.error("Forms API request failed: %s", e)
             return
 
-        if "ccp1" in data:
-            form = parse_ccp1_json(data["ccp1"])
-            await update_ccp1_nodes(self._ccp1_nodes, form)
-            logger.info("CCP1 form updated: %s / %s", form.header.product, form.header.sku)
+        for form_type, form_data in data.items():
+            if not isinstance(form_data, dict):
+                continue
 
-        if "ccp3" in data:
-            form = parse_ccp3_json(data["ccp3"])
-            await update_ccp3_nodes(self._ccp3_nodes, form)
-            logger.info("CCP3 form updated: %s / %s", form.header.product, form.header.sku)
+            # Create a registry + folder for form types we haven't seen yet
+            if form_type not in self._form_registries:
+                folder = await self._forms_folder.add_folder(
+                    self._idx, form_type.upper()
+                )
+                self._form_registries[form_type] = FormNodeRegistry(root_folder=folder)
+                logger.info("New form type discovered: %s", form_type.upper())
+
+            registry = self._form_registries[form_type]
+            await create_or_update_form_nodes(registry, self._idx, form_data)
+
+            header = form_data.get("header", {})
+            logger.info(
+                "%s form updated: %s / %s",
+                form_type.upper(),
+                header.get("product", "N/A"),
+                header.get("sku", "N/A"),
+            )
 
     async def _poll_loop(self) -> None:
         """Continuously fetch data from the API and update nodes."""
