@@ -17,6 +17,7 @@ class ServerConfig:
 @dataclass
 class APIConfig:
     url: str = "http://localhost:8080/api/data"
+    forms_url: str = "http://localhost:8080/api/forms"
     poll_interval_seconds: float = 5.0
     timeout_seconds: float = 10.0
     headers: dict[str, str] = field(default_factory=dict)
@@ -62,6 +63,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
 
         api = raw.get("api", {})
         config.api.url = api.get("url", config.api.url)
+        config.api.forms_url = api.get("forms_url", config.api.forms_url)
         config.api.poll_interval_seconds = api.get("poll_interval_seconds", config.api.poll_interval_seconds)
         config.api.timeout_seconds = api.get("timeout_seconds", config.api.timeout_seconds)
         config.api.headers = api.get("headers", config.api.headers) or {}
@@ -76,6 +78,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     # Environment variable overrides
     if env_url := os.environ.get("NUCHAS_API_URL"):
         config.api.url = env_url
+    if env_forms_url := os.environ.get("NUCHAS_FORMS_URL"):
+        config.api.forms_url = env_forms_url
     if env_endpoint := os.environ.get("NUCHAS_OPC_ENDPOINT"):
         config.server.endpoint = env_endpoint
     if env_interval := os.environ.get("NUCHAS_POLL_INTERVAL"):

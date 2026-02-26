@@ -1,12 +1,13 @@
 # Nuchas OPC UA SPC Server
 
-An OPC UA server that ingests JSON measurement data from an HTTP API, computes Statistical Process Control (SPC) statistics, and exposes the results as OPC UA variables for client connections.
+An OPC UA server that ingests JSON data from an HTTP API, computes Statistical Process Control (SPC) statistics, serves HACCP quality check forms (CCP1/CCP3), and exposes everything as OPC UA variables for client connections.
 
 ## Features
 
 - **JSON API ingestion** — Polls a configurable HTTP endpoint for measurement data. Supports multiple JSON formats (flat arrays, keyed objects, arrays of records).
 - **SPC calculations** — X-bar/R control charts, control limits (UCL/LCL), process standard deviation, and process capability indices (Cp, Cpk).
-- **OPC UA endpoint** — Publishes all SPC metrics as browsable OPC UA variables that any OPC UA client can connect to.
+- **HACCP quality forms** — CCP1 (cooking/kettle chilling) and CCP3 (baking/line chilling) stabilization monitoring forms with full field support (String, Int, Double, Boolean).
+- **OPC UA endpoint** — Publishes all metrics and form data as browsable OPC UA variables that any OPC UA client can connect to.
 - **Out-of-control detection** — Flags subgroups that exceed control limits.
 - **Configurable** — YAML config file with environment variable overrides.
 
@@ -41,6 +42,71 @@ Objects/
         ├── SigmaMultiplier (Double)
         ├── APISourceURL    (String)
         └── PollIntervalSec (Double)
+└── QualityForms/
+    ├── CCP1/                              # Cooking/Kettle chilling
+    │   ├── Header/
+    │   │   ├── QualityCheckID    (String)
+    │   │   ├── FormName          (String)
+    │   │   ├── AuthenticatedBy   (String)
+    │   │   ├── AuthTime          (String)
+    │   │   ├── TriggeredBy       (String)
+    │   │   ├── TriggerTime       (String)
+    │   │   ├── AssignedTo        (String)
+    │   │   ├── SignedOffBy       (String)
+    │   │   ├── SignOffTime       (String)
+    │   │   ├── Location          (String)
+    │   │   ├── Product           (String)
+    │   │   ├── SKU               (String)
+    │   │   ├── RunID             (String)
+    │   │   ├── CustomReference   (String)
+    │   │   ├── RunStartDate      (String)
+    │   │   ├── RunEndDate        (String)
+    │   │   ├── RunSignOffTime    (String)
+    │   │   └── RunSignOffBy      (String)
+    │   ├── CriticalLimitsText    (String)
+    │   ├── StartChilling/
+    │   │   ├── BatchNumber       (Int64)
+    │   │   ├── Temperature       (Double)
+    │   │   ├── Time              (String)
+    │   │   └── Pass              (Boolean)
+    │   ├── ChillingProcess1/
+    │   │   ├── BatchNumber       (Int64)
+    │   │   ├── Temperature       (Double)
+    │   │   ├── Time              (String)
+    │   │   └── Pass              (Boolean)
+    │   ├── ChillingProcess2/
+    │   │   ├── BatchNumber       (Int64)
+    │   │   ├── Temperature       (Double)
+    │   │   ├── Time              (String)
+    │   │   └── Pass              (Boolean)
+    │   └── DirectObservation/
+    │       ├── VerifiedBy        (String)
+    │       ├── Time              (String)
+    │       └── Results           (String)
+    └── CCP3/                              # Baking/Line chilling
+        ├── Header/                        (same as CCP1)
+        ├── CriticalLimitsText    (String)
+        ├── BakingStartChilling/
+        │   ├── BatchNumber       (Int64)
+        │   ├── RackNumber        (Int64)
+        │   ├── Temperature       (Double)
+        │   ├── DateTime          (String)
+        │   └── Pass              (Boolean)
+        ├── BakingChilling1/
+        │   ├── Temperature       (Double)
+        │   ├── USL               (Double)
+        │   ├── DateTime          (String)
+        │   └── Pass              (Boolean)
+        ├── BakingChilling2/
+        │   ├── Temperature       (Double)
+        │   ├── DateTime          (String)
+        │   └── Pass              (Boolean)
+        ├── DirectObservation/
+        │   ├── VerifiedBy        (String)
+        │   ├── Time              (String)
+        │   ├── Results           (String)
+        │   └── Comments          (String)
+        └── LinkedItems           (String)
 ```
 
 ## Quick Start
@@ -105,7 +171,7 @@ Use any OPC UA client (e.g., UaExpert, Prosys OPC UA Browser) and connect to:
 opc.tcp://localhost:4840/nuchas/server
 ```
 
-Browse to `Objects → SPC` to see all SPC variables updating in real time.
+Browse to `Objects → SPC` for SPC data or `Objects → QualityForms → CCP1/CCP3` for quality check forms.
 
 ## Supported JSON Formats
 
@@ -135,9 +201,11 @@ python -m pytest tests/ -v
 │   ├── spc.py            # SPC statistical calculations
 │   ├── api_client.py     # HTTP JSON API client
 │   ├── config.py         # Configuration loader
+│   ├── quality_forms.py  # CCP1/CCP3 form definitions + OPC UA nodes
 │   └── mock_api.py       # Mock data API for testing
 └── tests/
     ├── test_spc.py       # SPC calculation tests
     ├── test_api_client.py # JSON extraction tests
-    └── test_config.py    # Config loading tests
+    ├── test_config.py    # Config loading tests
+    └── test_quality_forms.py # CCP1/CCP3 parsing tests
 ```

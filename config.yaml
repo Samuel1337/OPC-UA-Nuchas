@@ -7,6 +7,8 @@ server:
 # JSON API source configuration
 api:
   url: "http://localhost:8080/api/data"
+  # Quality check forms endpoint (CCP1/CCP3)
+  forms_url: "http://localhost:8080/api/forms"
   poll_interval_seconds: 5
   timeout_seconds: 10
   # HTTP headers to include in API requests (e.g. for authentication)

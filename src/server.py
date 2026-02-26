@@ -1,9 +1,10 @@
 """
-OPC UA Server that exposes SPC (Statistical Process Control) data.
+OPC UA Server that exposes SPC data and HACCP quality check forms.
 
 Fetches JSON measurement data from an HTTP API, computes SPC statistics
 (X-bar/R charts, control limits, process capability), and publishes
-the results as OPC UA variables for client consumption.
+the results as OPC UA variables for client consumption.  Also serves
+CCP1 and CCP3 quality check form data from a forms API endpoint.
 """
 
 import asyncio
@@ -16,13 +17,21 @@ from asyncua import Server, ua
 
 from src.api_client import APIClient
 from src.config import AppConfig, load_config
+from src.quality_forms import (
+    create_ccp1_nodes,
+    create_ccp3_nodes,
+    parse_ccp1_json,
+    parse_ccp3_json,
+    update_ccp1_nodes,
+    update_ccp3_nodes,
+)
 from src.spc import SPCCalculator, SPCResult
 
 logger = logging.getLogger(__name__)
 
 
 class OPCUASPCServer:
-    """OPC UA server that exposes SPC metrics computed from API data."""
+    """OPC UA server that exposes SPC metrics and quality forms."""
 
     def __init__(self, config: AppConfig):
         self.config = config
@@ -40,8 +49,11 @@ class OPCUASPCServer:
             timeout=config.api.timeout_seconds,
             headers=config.api.headers,
         )
+        self._forms_client: APIClient | None = None
         self._running = False
         self._nodes: dict[str, object] = {}
+        self._ccp1_nodes: dict[str, object] = {}
+        self._ccp3_nodes: dict[str, object] = {}
 
     async def init(self) -> None:
         """Initialize the OPC UA server and create the address space."""
@@ -136,7 +148,12 @@ class OPCUASPCServer:
         for node in self._nodes.values():
             await node.set_writable(False)
 
-        logger.info("OPC UA address space initialized with SPC nodes")
+        # ── Quality Check Forms ──────────────────────────────────
+        forms_folder = await self.server.nodes.objects.add_folder(idx, "QualityForms")
+        self._ccp1_nodes = await create_ccp1_nodes(self.server, idx, forms_folder)
+        self._ccp3_nodes = await create_ccp3_nodes(self.server, idx, forms_folder)
+
+        logger.info("OPC UA address space initialized with SPC + quality form nodes")
 
     async def _update_nodes(self, result: SPCResult) -> None:
         """Write SPC result values into OPC UA nodes."""
@@ -160,11 +177,47 @@ class OPCUASPCServer:
         await self._nodes["x_bar_ooc_count"].write_value(len(result.x_bar_ooc_points))
         await self._nodes["r_ooc_count"].write_value(len(result.r_ooc_points))
 
+    async def _fetch_forms(self) -> None:
+        """Fetch quality form JSON from the forms API and update OPC UA nodes."""
+        if not self._forms_client:
+            return
+        try:
+            async with self._forms_client._session.get(
+                self.config.api.forms_url
+            ) as response:
+                response.raise_for_status()
+                data = await response.json()
+        except Exception as e:
+            logger.error("Forms API request failed: %s", e)
+            return
+
+        if "ccp1" in data:
+            form = parse_ccp1_json(data["ccp1"])
+            await update_ccp1_nodes(self._ccp1_nodes, form)
+            logger.info("CCP1 form updated: %s / %s", form.header.product, form.header.sku)
+
+        if "ccp3" in data:
+            form = parse_ccp3_json(data["ccp3"])
+            await update_ccp3_nodes(self._ccp3_nodes, form)
+            logger.info("CCP3 form updated: %s / %s", form.header.product, form.header.sku)
+
     async def _poll_loop(self) -> None:
-        """Continuously fetch data from the API and update SPC nodes."""
+        """Continuously fetch data from the API and update nodes."""
         await self.api_client.start()
+
+        # Set up forms client if forms_url is configured
+        if self.config.api.forms_url:
+            self._forms_client = APIClient(
+                url=self.config.api.forms_url,
+                poll_interval=self.config.api.poll_interval_seconds,
+                timeout=self.config.api.timeout_seconds,
+                headers=self.config.api.headers,
+            )
+            await self._forms_client.start()
+
         try:
             while self._running:
+                # SPC data
                 values = await self.api_client.fetch()
                 if values:
                     self.spc.add_values(values)
@@ -178,9 +231,15 @@ class OPCUASPCServer:
                         result.r_bar,
                         result.subgroup_count,
                     )
+
+                # Quality forms
+                await self._fetch_forms()
+
                 await asyncio.sleep(self.config.api.poll_interval_seconds)
         finally:
             await self.api_client.stop()
+            if self._forms_client:
+                await self._forms_client.stop()
 
     async def start(self) -> None:
         """Start the OPC UA server and begin polling."""
